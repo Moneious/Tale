@@ -1,0 +1,24 @@
+[gd_scene load_steps=5 format=2]
+
+[ext_resource path="res://Asset/Light/Shader/parchment.jpg" type="Texture" id=1]
+[ext_resource path="res://Asset/Light/Shader/pencil.jpg" type="Texture" id=2]
+[ext_resource path="res://shaders/screen_space/pencil.gdshader" type="Shader" id=3]
+
+[sub_resource type="ShaderMaterial" id=5]
+shader = ExtResource( 3 )
+shader_param/u_bgColor = Color( 1, 1, 1, 1 )
+shader_param/u_bgColorFactor = 0.635
+shader_param/u_patternColor = Color( 0, 0, 0, 1 )
+shader_param/u_threshold1 = 0.75
+shader_param/u_threshold2 = 0.5
+shader_param/u_threshold3 = 0.25
+shader_param/u_threshold4 = 0.05
+shader_param/u_bgTiling = Vector2( 1.837, 1.5 )
+shader_param/u_patternTiling = Vector2( 4, 3 )
+shader_param/u_bgTexture = ExtResource( 1 )
+shader_param/u_patternTexture = ExtResource( 2 )
+
+[node name="PencilFilter" type="ColorRect"]
+material = SubResource( 5 )
+anchor_right = 1.0
+anchor_bottom = 1.0

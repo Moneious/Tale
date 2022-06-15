@@ -1,0 +1,97 @@
+var placeable = false
+			var current_tile = base_tile.get_cell(x, y)
+			for tile in range(0, 40 + 1):
+				if current_tile == tile:
+					placeable = true
+					
+			var asset = search_cell(x, y, [54, 61], 1, base_tile)
+			if placeable and asset["count"]:
+				for binary in asset["coor"]:
+					var cx = ceil((x * 2 + 1/2) + (binary[0] * 3/2))
+					var cy = ceil((y * 2 + 1/2) + (binary[1] * 3/2))
+					var fx = floor((x * 2 + 1/2) + (binary[0] * 3/2))
+					var fy = floor((y * 2 + 1/2) + (binary[1] * 3/2))
+					for dx in [-1, 0, 1]:
+						for dy in [-1, 0, 1]:
+							auto_tile.set_cell(cx + dx, cy + dy, 27)
+							auto_tile.set_cell(fx + dx, fy + dy, 27)
+
+func generate_puddle(width, height, land_region=[Vector2.ZERO], num = 200, cell = 0):
+	var random = RandomNumberGenerator.new()
+	
+	for times in num:
+		random.randomize()
+		var index = random.randi_range(0, len(land_region) - 1)
+		var coor = land_region[index] * 2
+		var size = random.randi_range(2, 4)
+		# Up Down Left Right
+		var steps = [size, size, size, size]
+		var move = [[0, -1], [0, 1], [-1, 0], [1, 0]]
+		while steps != [0,0,0,0]:
+			random.randomize()
+			var step = random.randi_range(0, 3)
+			if steps[step] != 0:
+				steps[step] -= 1
+				auto_tile.set_cell(coor.x + move[step][0], coor.y + move[step][1], cell)
+				
+	for x in width:
+		for y in height:
+			if auto_tile.get_cell(x, y) == cell and auto_tile.get_cell(x, y+1) != cell:
+				var sy = y + 1
+				while auto_tile.get_cell(x, sy) != cell:
+					auto_tile.set_cell(x, y, cell)
+					sy += 1
+
+	base_tile.update_bitmask_region()
+
+var border = 5
+	# generate foundation layer
+	for x in range(-border, width + border + 1):
+		for y in range(-border, height + border + 1):
+			base_tile.set_cell(x, y, pick_tile("dirt"), 
+				random.randi_range(0, 1))
+
+	# Clean up isolated tiles	
+	for x in width:
+		for y in height:
+			var x1 = x + x0
+			var y1 = y + y0
+			var num = 0
+			if auto_tile.get_cell(x1, y1) == 0:
+				for dx in [-2, -1, 0, 1, 2]:
+					for dy in [-2, -1, 0, 1, 2]:
+						if auto_tile.get_cell(2 * x1 + dx, 2 * y1 + dy) == 0:
+							num += 1
+				if num <= 9:
+					for dx in [-1, 0, 1]:
+						for dy in [-1, 0, 1]:
+							auto_tile.set_cell(2 * x1 + dx, 2 * y1 + dy, -1)
+
+var center_pos = current_pos + Vector2(update_width / 2, update_height / 2)
+	var player_pos = Vector2(round(player.transform.get_origin()[0] / 16), 
+							 round(player.transform.get_origin()[1] / 16))
+	if center_pos.distance_to(player_pos) <= 16:
+		circle_tag = true
+	elif center_pos.distance_to(player_pos) > 16:
+		var old_pos = current_pos
+		var decided_pos = current_pos
+		var poses = [Vector2(old_pos.x-update_width, old_pos.y), 
+					 Vector2(old_pos.x+update_width, old_pos.y),
+					 Vector2(old_pos.x, old_pos.y-update_height),
+					 Vector2(old_pos.x, old_pos.y+update_height), 
+					 Vector2(old_pos.x+update_width, old_pos.y+update_height),
+					 Vector2(old_pos.x-update_width, old_pos.y-update_height),
+					 Vector2(old_pos.x-update_width, old_pos.y+update_height),
+					 Vector2(old_pos.x+update_width, old_pos.y-update_height)]
+			
+		for coor in poses:
+			# Update surrounding blocks
+			if !(coor in updated_blocks) and circle_tag:
+				current_pos = coor
+				execute_generating()
+				updated_blocks.append(coor)
+			
+		for coor in poses:
+			if check_inside_block(coor, player_pos):
+				current_pos = coor
+				circle_tag = false

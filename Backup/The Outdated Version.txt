@@ -1,0 +1,295 @@
+extends Node2D
+
+const WIDTH = 100
+const HEIGHT = 100
+# For hole calculation
+
+onready var circular_tile = $Circular
+onready var floor_tile = $Floor
+onready var borders = []
+onready var cool = Vector2(0, 0)
+
+# Called when the node enters the scene tree for the first time.
+func _ready():
+	randomize()
+	noize_generating(WIDTH, HEIGHT)
+	for iteration in 15:
+		build_land(WIDTH, HEIGHT)
+	#for iteration in 4:
+		#fix_hole(WIDTH, HEIGHT)
+	build_seaside(WIDTH, HEIGHT)
+	stroke_hole(WIDTH, HEIGHT, 10)
+	build_dirtbase(WIDTH, HEIGHT)
+	circular_tile.update_bitmask_region()
+	fix_outlaw_tile(WIDTH, HEIGHT)
+	# After update
+	fix_seaside_connective(WIDTH, HEIGHT)
+	circular_tile.update_bitmask_region(Vector2(cool.x + 18, cool.y + 18), Vector2(cool.x + WIDTH - 18, cool.y + HEIGHT - 18))
+	
+	
+func pick_tile(dec_weight = 1, base_range = [0, 2], dec_range = [3, 40]):
+	randomize()
+	dec_weight = 100 - dec_weight
+	var tile = int(rand_range(0, dec_weight))
+	if not tile:
+		randomize()
+		tile = floor(rand_range(dec_range[0], dec_range[1]))
+	else:
+		randomize()
+		tile = floor(rand_range(base_range[0], base_range[1]))
+	return int(tile)
+
+func noize_generating(length: int, height: int, wall_weight = 0.7):
+	for x in range(cool.x, cool.x + length):
+		for y in range(cool.y, cool.y + height):
+			randomize()
+			var nail = randf()
+			if nail > 1 - wall_weight:
+				var tile = pick_tile()
+				floor_tile.set_cell(x, y, tile, false, false, false, Vector2(0, 0))
+
+func check_neighbour_wall(x: int, y: int) -> int:
+	var num = 0
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			if not floor_tile.get_cell(x + dx, y + dy) < 0:
+				num += 1
+	return num
+
+func check_auto_neighbour_space(x: int, y: int) -> int:
+	var num = 0
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			if circular_tile.get_cell(x + dx, y + dy) < 0:
+				num += 1
+	return num
+
+func check_broad_space(x: int, y: int) -> int:
+	var num = 0
+	for dx in [-2, -1, 0, 1, 2]:
+		for dy in [-2, -1, 0, 1, 2]:
+			if not floor_tile.get_cell(x + dx, y + dy) < 0:
+				num += 1
+	return 16 - (num - check_neighbour_wall(x, y))
+
+func build_land(length: int, height: int):
+	for x in range(cool.x, cool.x + length):
+		for y in range(cool.y, cool.y + height):
+			var judge = check_neighbour_wall(x, y)
+			var current_tile = floor_tile.get_cell(x, y)
+			if current_tile < 0 and judge > 5:
+				floor_tile.set_cell(x, y, pick_tile(), round(rand_range(0, 1)), false, false, Vector2(0, 0))
+			elif current_tile >= 0 and judge <= 4:
+				floor_tile.set_cell(x, y, -1, round(rand_range(0, 1)), false, false, Vector2(0, 0))
+
+func stroke_hole(length: int, height: int, fix_round: int):
+	for x in range(cool.x + 20, cool.x + length - 20):
+		for y in range(cool.y + 20, cool.y + height - 20):
+			var current_tile = circular_tile.get_cell(x, y)
+			if current_tile < 0 and 25 - check_broad_space(x, y) > 12:
+				var ex = detec_hole_startpoint(x, y)[0][0]
+				var ey = detec_hole_startpoint(x, y)[0][1]
+				for coor in fill_hole(ex, ey):
+					fill_hole(coor[0], coor[1])
+					
+	for x in range(cool.x + 18, cool.x + length - 18):
+		for y in range(cool.y + 18, cool.y + height - 18):
+			var current_tile = circular_tile.get_cell(x, y)
+			if current_tile == 27 and check_auto_neighbour_space(x, y) == 0:
+				for dx in [-1, 0, 1]:
+					for dy in [-1, 0, 1]:
+						if circular_tile.get_cell(x + dx, y + dy) == 0:
+							circular_tile.set_cell(x, y, 28,
+								round(rand_range(0, 1)), round(rand_range(0, 1)), false, Vector2(0, 0))
+	
+	for iteration in fix_round:
+		for x in range(cool.x + 10, cool.x + length - 10):
+			for y in range(cool.y + 10, cool.y + height - 10):
+				var current_tile = circular_tile.get_cell(x, y)
+				if current_tile == 27 and check_auto_neighbour_space(x, y) == 0:
+					for dx in [-1, 0, 1]:
+						for dy in [-1, 0, 1]:
+							if circular_tile.get_cell(x + dx, y + dy) == 28:
+								circular_tile.set_cell(x, y, 28,
+									round(rand_range(0, 1)), round(rand_range(0, 1)), false, Vector2(0, 0))
+				# Fix tiles with invalid bitmask
+				if current_tile == 0:
+					var flag = false
+					var num = get_identifier(x, y)
+					if not test_autotile_valid(num):
+						for dx in [-1, 0, 1]:
+							for dy in [-1, 0, 1]:
+								circular_tile.set_cell(x + dx, y + dy, 0,
+									false, false, false, Vector2(0, 0))
+				# Fix empty tiles
+				if current_tile == -1:
+					circular_tile.set_cell(x, y, 28,
+						round(rand_range(0, 1)), round(rand_range(0, 1)), false, Vector2(0, 0))
+				# Change tiles neighboured with empty tiles
+				if current_tile == 28 and check_auto_neighbour_space(x, y) != 0:
+					circular_tile.set_cell(x, y, 27,
+						false, false, false, Vector2(0, 0))
+
+func fix_outlaw_tile(length: int, height: int):
+	# Checking horizontal auto-tiles valid
+	for x in range(cool.x, cool.x + length):
+		for y in range(cool.y, cool.y + height):
+			if circular_tile.get_cell(x, y) == 0:
+				var left_hor = false
+				var right_hor = false
+				if circular_tile.get_cell_autotile_coord(x, y) == Vector2(1, 2):
+					for coor in [Vector2(1, 2), Vector2(2, 2), Vector2(0, 2)]:
+						if circular_tile.get_cell_autotile_coord(x - 1, y) == coor:
+							left_hor = true
+					for coor in [Vector2(1, 2), Vector2(2, 2), Vector2(3, 2)]:
+						if circular_tile.get_cell_autotile_coord(x + 1, y) == coor:
+							right_hor = true
+					if (not left_hor) and (not right_hor):
+						for dx in [-1, 0, 1]:
+							for dy in [-1, 0, 1]:
+								circular_tile.set_cell(x + dx, y + dy, 0,
+									false, false, false, Vector2(0, 0))
+					
+	# Checking vertical auto-tiles valid
+	for x in range(cool.x, cool.x + length):
+		for y in range(cool.y, cool.y + height):
+			if circular_tile.get_cell(x, y) == 0 and circular_tile.get_cell_autotile_coord(x, y) == Vector2(1, 2):
+				for ny in [-1, 1]:
+					if circular_tile.get_cell(x, y) == 0 and circular_tile.get_cell_autotile_coord(x, y + ny) == Vector2(1, 2):
+						for dx in [-1, 0, 1]:
+							for dy in [-1, 0, 1]:
+								circular_tile.set_cell(x + dx, y + dy, 0,
+									false, false, false, Vector2(0, 0))
+	
+	circular_tile.update_bitmask_region()
+						
+func get_identifier(x, y):
+	var num = ""
+	var space = []
+	for coor in [[-1, -1], [0, -1], [1, -1], 
+				 [-1, 0], [0, 0], [1, 0],
+				 [-1, 1],[0, 1],[1, 1]]:
+		if circular_tile.get_cell(x + coor[0], y + coor[1]) == 0:
+			num += "1"
+		else:
+			num += "0"
+	return num
+
+func test_autotile_valid(num: String):
+	var wrong_access = 0
+	for identifier in ["011111111", "110111111", "111111011", "111111110",
+					   "000111111", "111111000", "011011011", "110110110",
+					   "110110000", "000011011", "000110110", "011011000",
+					   "111111111"]:
+		var index = 0
+		var wrong_signal = false
+		for node in num:
+			if node == "0" and identifier[index] == "1":
+				wrong_signal = true
+			index += 1
+		if wrong_signal:
+			wrong_access += 1
+	if wrong_access == 13:
+		return false
+	return true
+	
+func fill_hole(x, y):
+	var coor = []
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			if detec_hole_sidepoint(x + dx, y + dy):
+				circular_tile.set_cell(x + dx, y + dy, 0,
+						false, false, false, Vector2(0, 0))
+				coor.append([x + dx, y + dy])
+	if not len(coor):
+			return false
+	return coor
+					
+func detec_hole_startpoint(x, y):
+	for dx in [-2, -1, 0, 1, 2]:
+		for dy in [-2, -1, 0, 1, 2]:
+			if circular_tile.get_cell(x + dx, y + dy) >= 0:
+				for ddx in [-1, 0, 1]:
+					for ddy in [-1, 0, 1]:
+						if circular_tile.get_cell(x + dx + ddx, y + dy + ddy) < 0:
+							# block and empty	
+							return [[x + dx, y + dy], [x + dx + ddx, y + dy + ddy]]
+
+func detec_hole_sidepoint(x, y):
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			if circular_tile.get_cell(x + dx, y + dy) < 0:
+				return true
+	return false
+									
+func change_seaside(x, y, state: bool):
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			if state:
+				if floor_tile.get_cell(x + dx, y + dy) < 0:
+					circular_tile.set_cell(x, y, 27, 
+						false, false, false, Vector2(0, 0))
+			else:
+				if floor_tile.get_cell(x + dx, y + dy) >= 0:
+					borders.append([x, y])
+					circular_tile.set_cell(x + dx, y + dy, 27, 
+						false, false, false, Vector2(0, 0))
+
+func build_seaside(length: int, height: int):
+	for x in range(cool.x, cool.x + length):
+		for y in range(cool.y, cool.y + height):
+			if floor_tile.get_cell(x, y) >= 0:
+				change_seaside(x, y, true)
+				change_seaside(x, y, false)
+			
+func fix_seaside_connective(length: int, height: int):
+	# fix connections between seaside tiles and inland hole tiles
+	for x in range(cool.x + 9, cool.x + length - 9):
+		for y in range(cool.y + 9, cool.y + height - 9):
+			if circular_tile.get_cell(x, y) == 27 and check_auto_neighbour_space(x, y) == 0:
+				for dx in [-1, 0, 1]:
+					for dy in [-1, 0, 1]:
+						if circular_tile.get_cell(x + dx, y + dy) == 28:
+							circular_tile.set_cell(x, y, 28, 
+						round(rand_range(0, 1)), round(rand_range(0, 1)), false, Vector2(0, 0))
+			if circular_tile.get_cell(x, y) == 28 and check_auto_neighbour_space(x, y) != 0:
+				circular_tile.set_cell(x, y, 27,
+						false, false, false, Vector2(0, 0))
+	
+	# fix tiles (nearby seaside) with incomplete holes
+	for x in range(cool.x + 7, cool.x + length - 7):
+		for y in range(cool.y + 7, cool.y + height - 7):
+			if circular_tile.get_cell(x, y) < 0 and check_broad_space(x, y) < 5:
+				for dx in [-4, -3, -2, -1, 0, 1, 2, 3, 4]:
+					for dy in [-4, -3, -2, -1, 0, 1, 2, 3, 4]:
+						if circular_tile.get_cell(x + dx, y + dy) < 0 and check_broad_space(x + dx, y + dy) < 4:
+							for ux in [-3, -2, -1, 0, 1, 2, 3]:
+								for uy in [-3, -2, -1, 0, 1, 2, 3]:
+									if circular_tile.get_cell(x + ux, y + uy) < 0 or circular_tile.get_cell(x + ux, y + uy) == 27:
+										circular_tile.set_cell(x + ux, y + uy, 28,
+											round(rand_range(0, 1)), false, false, Vector2(0, 0))
+	
+	# fix seaside corroded by tiles
+	for x in range(cool.x, cool.x + length):
+		for y in range(cool.y, cool.y + height):
+			if circular_tile.get_cell(x, y) == 28:
+				if circular_tile.get_cell(x + 1, y) < 0:
+					circular_tile.set_cell(x, y, 27, false, false, false, Vector2(3, 1))
+				elif circular_tile.get_cell(x - 1, y) < 0:
+					circular_tile.set_cell(x, y, 27, false, false, false, Vector2(0, 1))
+				elif circular_tile.get_cell(x, y + 1) < 0:
+					circular_tile.set_cell(x, y, 27, false, false, false, Vector2(2, 3))
+				elif circular_tile.get_cell(x, y - 1) < 0:
+					circular_tile.set_cell(x, y, 27, false, false, false, Vector2(2, 0))
+				elif circular_tile.get_cell(x - 1, y) == 27 and circular_tile.get_cell_autotile_coord(x - 1, y) == Vector2(3, 0):
+					circular_tile.set_cell(x, y, 27, false, false, false, Vector2(0, 1))
+				elif circular_tile.get_cell(x + 1, y) == 27 and circular_tile.get_cell_autotile_coord(x + 1, y) == Vector2(0, 0):
+					circular_tile.set_cell(x, y, 27, false, false, false, Vector2(3, 1))
+					
+func build_dirtbase(length: int, height: int):
+	for x in range(cool.x, cool.x + length):
+		for y in range(cool.y, cool.y + height):
+			if floor_tile.get_cell(x, y) < 0 and circular_tile.get_cell(x, y) < 0:
+				randomize()
+				floor_tile.set_cell(x, y, pick_tile(1, [54, 57], [58, 61]), 
+					round(rand_range(0, 1)), false, false, Vector2(0, 0))
